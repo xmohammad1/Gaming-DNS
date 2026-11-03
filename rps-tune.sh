@@ -11,6 +11,7 @@
 #
 # Requires Linux with systemd; run as root.
 #
+#   bash <(curl -fsSL https://raw.githubusercontent.com/xmohammad1/Gaming-DNS/main/rps-tune.sh) install
 #   bash rps-tune.sh install   apply now and at every boot
 #   rps-tune status            settings and per-core packet load
 #   rps-tune remove            back to kernel defaults
@@ -23,6 +24,7 @@ readonly SELF_BIN="/usr/local/sbin/rps-tune"
 readonly UNIT="/etc/systemd/system/rps-tune.service"
 readonly SYSCTL_FILE="/etc/sysctl.d/90-rps-tune.conf"
 readonly FLOW_ENTRIES=32768
+readonly REPO_RAW="https://raw.githubusercontent.com/xmohammad1/Gaming-DNS/main"
 
 ok()  { printf '[+] %s\n' "$*"; }
 die() { printf '[x] %s\n' "$*" >&2; exit 1; }
@@ -84,10 +86,21 @@ cmd_apply() {
 
 cmd_install() {
   require_root
-  local src
-  src=$(readlink -f "${BASH_SOURCE[0]}")
-  [[ -f $src ]] || die "Save the script to a file and run it from there"
-  if [[ $src != "$SELF_BIN" ]]; then install -m 755 "$src" "$SELF_BIN"; fi
+  local src tmp
+  src=$(readlink -f "${BASH_SOURCE[0]:-}" 2>/dev/null || true)
+  if [[ -f $src ]] && grep -q 'readonly PROG="rps-tune"' "$src" 2>/dev/null; then
+    if [[ $src != "$SELF_BIN" ]]; then install -m 755 "$src" "$SELF_BIN"; fi
+  else
+    # Started from a pipe (bash <(curl ...)): fetch the same script to install.
+    tmp=$(mktemp)
+    if ! curl -fsSL --max-time 60 -o "$tmp" "$REPO_RAW/rps-tune.sh" || ! bash -n "$tmp" ||
+      ! grep -q 'readonly PROG="rps-tune"' "$tmp"; then
+      rm -f "$tmp"
+      die "Could not download $REPO_RAW/rps-tune.sh; save the script to a file and run it from there"
+    fi
+    install -m 755 "$tmp" "$SELF_BIN"
+    rm -f "$tmp"
+  fi
   printf '# %s: flow table for RFS\nnet.core.rps_sock_flow_entries = %s\n' "$PROG" "$FLOW_ENTRIES" >"$SYSCTL_FILE"
   cat >"$UNIT" <<EOF
 [Unit]

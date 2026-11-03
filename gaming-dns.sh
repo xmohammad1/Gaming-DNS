@@ -15,6 +15,7 @@
 #
 # Requires Debian 11+ / Ubuntu 20.04+ with systemd; run as root.
 #
+#   bash <(curl -fsSL https://raw.githubusercontent.com/xmohammad1/Gaming-DNS/main/gaming-dns.sh) install
 #   bash gaming-dns.sh install       install (re-run with options to reconfigure)
 #   gaming-dns test [domain...]      every IP of a domain, its latency, what Xray gets
 #   gaming-dns help                  all commands and options
@@ -23,7 +24,7 @@ set -Eeuo pipefail
 umask 022
 export LC_ALL=C
 
-readonly VERSION="1.1.0"
+readonly VERSION="1.1.1"
 readonly PROG="gaming-dns"
 readonly SELF_BIN="/usr/local/bin/gaming-dns"
 readonly CONF_DIR="/etc/gaming-dns"
@@ -47,6 +48,7 @@ readonly FW_MARK="23886"           # SmartDNS marks its upstream queries with th
 readonly BYPASS_USER="gaming-dns"  # DNS sent by this user is never redirected
 readonly PROBE_NAME="probe.gaming-dns.invalid" # answered locally, for health checks
 readonly GH_API="https://api.github.com/repos/pymumu/smartdns/releases/latest"
+readonly REPO_RAW="https://raw.githubusercontent.com/xmohammad1/Gaming-DNS/main"
 readonly TEST_DOMAINS="api.steampowered.com steamcdn-a.akamaihd.net cdn.discordapp.com download.epicgames.com www.ea.com"
 
 # Settings: persisted in $CONF_FILE, overridable with command-line options.
@@ -244,13 +246,22 @@ ensure_bypass_user() {
 }
 
 install_self() {
-  local src
-  src=$(readlink -f "${BASH_SOURCE[0]}" 2>/dev/null || true)
-  if [[ -f $src && $src != "$SELF_BIN" ]]; then
-    install -m 755 "$src" "$SELF_BIN"
-  elif [[ ! -x $SELF_BIN ]]; then
-    die "Save the script to a file and run it from there (it installs itself to $SELF_BIN)"
+  local src tmp
+  src=$(readlink -f "${BASH_SOURCE[0]:-}" 2>/dev/null || true)
+  if [[ -f $src ]] && grep -q 'readonly PROG="gaming-dns"' "$src" 2>/dev/null; then
+    if [[ $src != "$SELF_BIN" ]]; then install -m 755 "$src" "$SELF_BIN"; fi
+    return 0
   fi
+  # Started from a pipe (bash <(curl ...)): fetch the same script to install.
+  tmp=$(mktemp)
+  if curl -fsSL --max-time 60 -o "$tmp" "$REPO_RAW/gaming-dns.sh" && bash -n "$tmp" &&
+    grep -q 'readonly PROG="gaming-dns"' "$tmp"; then
+    install -m 755 "$tmp" "$SELF_BIN"
+  elif [[ ! -x $SELF_BIN ]]; then
+    rm -f "$tmp"
+    die "Could not download $REPO_RAW/gaming-dns.sh; save the script to a file and run it from there"
+  fi
+  rm -f "$tmp"
 }
 
 is_private_v4() {
@@ -443,12 +454,11 @@ log-size 1m
 log-num 2
 EOF
   } >"$SDNS_CONF.tmp"
-  if cmp -s "$SDNS_CONF.tmp" "$SDNS_CONF"; then
-    rm -f "$SDNS_CONF.tmp"
-  else
-    mv -f "$SDNS_CONF.tmp" "$SDNS_CONF"
+  # Only real setting changes count (they also flush the cache), not comments.
+  if ! cmp -s <(grep -v '^#' "$SDNS_CONF.tmp") <(grep -v '^#' "$SDNS_CONF" 2>/dev/null); then
     SDNS_CONF_CHANGED=1
   fi
+  mv -f "$SDNS_CONF.tmp" "$SDNS_CONF"
 }
 
 # Liveness: SmartDNS answers its local probe record (no upstream involved).
