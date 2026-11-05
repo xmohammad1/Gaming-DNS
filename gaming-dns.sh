@@ -108,7 +108,7 @@ Commands:
 
 Options for install / apply:
   --upstreams LIST   Upstream DNS servers, comma separated
-                     (default: 8.8.8.8,8.8.4.4,95.85.95.85,2.56.220.2)
+                     (default: 1.1.1.1,1.0.0.1)
   --mode MODE        fastest-ip (default) | first-ping | fastest-response
   --speed-check STR  Latency probes in order of preference
                      (default: ping,tcp:443,tcp:80)
